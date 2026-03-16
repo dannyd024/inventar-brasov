@@ -184,8 +184,37 @@
     border-right: 1px solid var(--border2);
     display: flex; flex-direction: column;
     overflow-y: auto; overflow-x: hidden;
-    transition: background .3s, border-color .3s;
+    transition: width .25s ease, background .3s, border-color .3s;
+    position: relative;
   }
+  .sidebar.collapsed {
+    width: 0px;
+    border-right: none;
+    overflow: hidden;
+  }
+  .sidebar.collapsed * { opacity: 0; pointer-events: none; }
+  .sidebar-toggle {
+    position: absolute;
+    top: 50%;
+    left: var(--sidebar-w);
+    transform: translateY(-50%);
+    z-index: 50;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    width: 18px;
+    height: 48px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text3);
+    transition: left .25s ease, background .2s;
+    font-size: 10px;
+  }
+  .sidebar-toggle:hover { background: var(--hover); color: var(--text); }
+  .sidebar-toggle.collapsed { left: 0; }
   .sidebar::-webkit-scrollbar { width: 3px; }
   .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
@@ -259,6 +288,7 @@
   .table-count { font-size: 11px; color: var(--text3); margin-left: 8px; font-family: 'DM Mono', monospace; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .product-row { cursor: pointer; -webkit-tap-highlight-color: rgba(47,129,247,0.15); }
   thead tr { background: var(--surface2); border-bottom: 1px solid var(--border); }
   thead th {
     padding: 10px 14px; text-align: left;
@@ -611,6 +641,7 @@
 <div class="app-layout" id="mainView">
 
   <!-- SIDEBAR -->
+  <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Restrânge/Extinde sidebar">‹</button>
   <aside class="sidebar" id="sidebarEl">
     <div class="sidebar-section-label">Categorii</div>
     <div id="sidebarCats"></div>
@@ -1149,6 +1180,7 @@ const safeStorage = {
     try { localStorage.setItem(key, val); } catch(e) {}
   }
 };
+let collapsedCats = new Set();
 let operators = JSON.parse(safeStorage.get('inv_operators', '[]'));
 
 
@@ -1181,6 +1213,30 @@ const catIcons = {
   'Ambalaje': '📦', 'Consumabile': '🖊️', 'EIP': '🦺',
   'Echipamente': '⚙️', 'Scule': '🔧', 'Mobilier': '🪑',
 };
+
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebarEl');
+  const btn = document.getElementById('sidebarToggle');
+  const collapsed = sb.classList.toggle('collapsed');
+  btn.classList.toggle('collapsed', collapsed);
+  btn.textContent = collapsed ? '›' : '‹';
+  // Save preference
+  try { localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0'); } catch(e) {}
+}
+
+// Restore sidebar state on load
+function initSidebar() {
+  try {
+    if (localStorage.getItem('sidebarCollapsed') === '1') {
+      const sb = document.getElementById('sidebarEl');
+      const btn = document.getElementById('sidebarToggle');
+      sb.classList.add('collapsed');
+      btn.classList.add('collapsed');
+      btn.textContent = '›';
+    }
+  } catch(e) {}
+}
 
 function renderSidebar() {
   const cats = [...new Set(products.map(p=>p.cat))].sort();
@@ -1273,16 +1329,18 @@ function renderTable() {
       const items = groups[cat];
       const alertCount = items.filter(p=>getStatus(p)==='critical'||getStatus(p)==='low').length;
       const icon = catIcons[cat]||'📁';
-      html += `<tr style="background:var(--surface2)">
+      const isCollapsed = collapsedCats.has(cat);
+      html += `<tr style="background:var(--surface2);cursor:pointer" onclick="toggleCat('${cat.replace(/'/g,"\\'")}')">
         <td colspan="11" style="padding:10px 16px 6px">
           <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--text3);transition:transform .2s;display:inline-block;transform:${isCollapsed?'rotate(-90deg)':'rotate(0deg)'}"">▼</span>
             <span style="font-size:13px;font-weight:700;color:var(--text)">${icon} ${cat}</span>
             <span class="cat-badge">${items.length} ${items.length===1?'produs':'produse'}</span>
             ${alertCount>0?`<span class="cat-badge cat-badge-alert">⚠️ ${alertCount} alertă</span>`:''}
           </div>
         </td>
       </tr>`;
-      items.forEach(p => { html += buildRow(p); });
+      if (!isCollapsed) { items.forEach(p => { html += buildRow(p); }); }
     });
   } else {
     list.forEach(p => { html += buildRow(p); });
@@ -1291,10 +1349,17 @@ function renderTable() {
   document.getElementById('tableBody').innerHTML = html;
 }
 
+
+function toggleCat(cat) {
+  if (collapsedCats.has(cat)) collapsedCats.delete(cat);
+  else collapsedCats.add(cat);
+  renderTable();
+}
+
 function buildRow(p) {
   const pct = p.max > 0 ? Math.min(100, Math.round(p.stoc / p.max * 100)) : 0;
   const barColor = getStatus(p)==='critical'?'var(--red)':getStatus(p)==='low'?'var(--yellow)':getStatus(p)==='max'?'var(--blue)':'var(--green)';
-  return `<tr class="product-row" onclick="trackProduct(${p.id})" title="Click pentru a urmări produsul">
+  return `<tr class="product-row" onclick="trackProduct(${p.id})" title="Click pentru a urmări produsul" style="cursor:pointer">
     <td><span class="mono text-dim">${p.cod}</span></td>
     <td><strong style="font-weight:500">${p.den}</strong></td>
     <td><span class="mono" style="font-size:12px;color:var(--purple)">${p.loc||'—'}</span></td>
@@ -2044,6 +2109,7 @@ function initTheme() {
 }
 
 function startApp() {
+  initSidebar();
   initTheme();
   initMobileNav();
 
